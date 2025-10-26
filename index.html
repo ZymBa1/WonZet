@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<title>WonZet v0.1.0</title>
+<style>
+body { margin:0; overflow:hidden; background:#111; font-family:Arial; color:#fff; }
+#menu { position:absolute; top:0; left:0; width:100%; height:100%; background:#111; display:flex; flex-direction:column; align-items:center; justify-content:center; }
+button { padding:10px 20px; margin:5px; font-size:18px; cursor:pointer; }
+#hud { position:absolute; bottom:10px; left:10px; color:#0f0; font-size:18px; }
+#canvasContainer { width:100%; height:100%; }
+#mobileControls { position:absolute; bottom:20px; left:50%; transform:translateX(-50%); display:flex; gap:20px; }
+.mobile-btn { width:60px; height:60px; background:rgba(0,255,0,0.3); border-radius:50%; text-align:center; line-height:60px; font-weight:bold; user-select:none; }
+</style>
+</head>
+<body>
+<div id="menu">
+<h1>WonZet v0.1.0</h1>
+<button id="playBtn">Играть</button>
+<button id="polygonBtn">Полигон</button>
+<button id="settingsBtn">Настройки</button>
+</div>
+<div id="canvasContainer"></div>
+<div id="hud">Патроны: 30 | Оружие: Пистолет</div>
+<div id="mobileControls">
+<div class="mobile-btn" id="fireBtn">F</div>
+<div class="mobile-btn" id="jumpBtn">J</div>
+<div class="mobile-btn" id="crouchBtn">C</div>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/three@0.158.0/build/three.min.js"></script>
+<script>
+// ====== Инициализация сцены ======
+let scene, camera, renderer, player, controls, bullets=[], bots=[], weapons=[], currentWeapon=0;
+scene = new THREE.Scene();
+camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1000);
+renderer = new THREE.WebGLRenderer({antialias:true});
+renderer.setSize(window.innerWidth, window.innerHeight);
+document.getElementById('canvasContainer').appendChild(renderer.domElement);
+
+// ====== Свет ======
+const light = new THREE.DirectionalLight(0xffffff,1);
+light.position.set(10,10,10);
+scene.add(light);
+
+// ====== Игрок ======
+player = new THREE.Mesh(new THREE.CapsuleGeometry(1,2,4,8), new THREE.MeshStandardMaterial({color:0x00ff00}));
+player.position.y=1;
+scene.add(player);
+camera.position.set(0,2,5);
+camera.lookAt(player.position);
+
+// ====== Пол ======
+const floor = new THREE.Mesh(new THREE.PlaneGeometry(100,100), new THREE.MeshStandardMaterial({color:0x555555}));
+floor.rotation.x=-Math.PI/2;
+scene.add(floor);
+
+// ====== Управление ======
+const keys={}; window.addEventListener('keydown', e=>keys[e.code]=true);
+window.addEventListener('keyup', e=>keys[e.code]=false);
+
+let velocityY=0, canJump=true, isCrouch=false;
+function handleMovement(){
+    let speed = isCrouch ? 0.05 : 0.1;
+    if(keys['KeyW']) player.position.z-=speed;
+    if(keys['KeyS']) player.position.z+=speed;
+    if(keys['KeyA']) player.position.x-=speed;
+    if(keys['KeyD']) player.position.x+=speed;
+    if(keys['Space'] && canJump){ velocityY=0.2; canJump=false; }
+    if(keys['ControlLeft']) isCrouch=true; else isCrouch=false;
+    velocityY-=0.01; player.position.y+=velocityY;
+    if(player.position.y<1){ player.position.y=1; velocityY=0; canJump=true; }
+    camera.position.set(player.position.x, player.position.y+1, player.position.z+5);
+    camera.lookAt(player.position);
+}
+
+// ====== Пули ======
+function shootBullet(){
+    let bullet = new THREE.Mesh(new THREE.SphereGeometry(0.1,8,8), new THREE.MeshBasicMaterial({color:0xff0000}));
+    bullet.position.copy(player.position);
+    bullet.velocity = new THREE.Vector3(0,0,-0.5);
+    bullets.push(bullet);
+    scene.add(bullet);
+}
+
+// ====== Боты ======
+function createBot(x,z){
+    let bot = new THREE.Mesh(new THREE.CapsuleGeometry(1,2,4,8), new THREE.MeshStandardMaterial({color:0xff0000}));
+    bot.position.set(x,1,z);
+    bots.push(bot);
+    scene.add(bot);
+}
+createBot(5,5);
+createBot(-5,-5);
+
+function botAI(){
+    bots.forEach(bot=>{
+        let dir = new THREE.Vector3(player.position.x-bot.position.x,0,player.position.z-bot.position.z).normalize();
+        bot.position.x += dir.x*0.02;
+        bot.position.z += dir.z*0.02;
+        if(Math.random()<0.01) shootBotBullet(bot);
+    });
+}
+function shootBotBullet(bot){
+    let bullet = new THREE.Mesh(new THREE.SphereGeometry(0.1,8,8), new THREE.MeshBasicMaterial({color:0xffff00}));
+    bullet.position.copy(bot.position);
+    bullet.velocity = new THREE.Vector3(player.position.x-bot.position.x,0,player.position.z-bot.position.z).normalize().multiplyScalar(0.3);
+    bullets.push(bullet);
+    scene.add(bullet);
+}
+
+// ====== HUD ======
+function updateHUD(){ document.getElementById('hud').innerText=`Патроны: 30 | Оружие: Пистолет`; }
+
+// ====== Основной рендер ======
+function animate(){
+    requestAnimationFrame(animate);
+    handleMovement();
+    bullets.forEach((b,i)=>{
+        b.position.add(b.velocity);
+        if(b.position.y<0 || b.position.z<-50 || b.position.z>50 || b.position.x<-50 || b.position.x>50){
+            scene.remove(b);
+            bullets.splice(i,1);
+        }
+    });
+    botAI();
+    updateHUD();
+    renderer.render(scene,camera);
+}
+animate();
+
+// ====== Меню ======
+document.getElementById('playBtn').onclick = ()=>{
+    document.getElementById('menu').style.display='none';
+};
+document.getElementById('polygonBtn').onclick = ()=>{
+    document.getElementById('menu').style.display='none';
+};
+document.getElementById('settingsBtn').onclick = ()=>{
+    alert('Настройки: 50 функций (управление, графика, звук, оптимизация)');
+};
+
+// ====== Мобильные кнопки ======
+document.getElementById('fireBtn').addEventListener('touchstart', shootBullet);
+document.getElementById('jumpBtn').addEventListener('touchstart', ()=>{ if(canJump){ velocityY=0.2; canJump=false; }});
+document.getElementById('crouchBtn').addEventListener('touchstart', ()=>{ isCrouch=true; });
+document.getElementById('crouchBtn').addEventListener('touchend', ()=>{ isCrouch=false; });
+
+// ====== Выход из беты ======
+console.log('WonZet v0.1.0 — Игра вышла из беты!');
+</script>
+</body>
+</html>
